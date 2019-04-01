@@ -1,7 +1,8 @@
 from . import auth
 from flask import render_template, request, url_for, redirect, flash
 from flask_login import login_required, login_user, logout_user, current_user
-from .forms import LoginForm, RegistrationForm, ChangePasswordForm, PasswordResetRequestForm, PasswordResetForm
+from .forms import LoginForm, RegistrationForm, ChangePasswordForm, PasswordResetRequestForm, PasswordResetForm, \
+    ChangeEmailForm
 from .. import db
 from ..email import send_email
 from ..models import User
@@ -124,3 +125,35 @@ def password_reset(token):
             flash("Password wasn't reset. Please try again")
             return redirect(url_for('auth.login'))
     return render_template('auth/reset_password.html', form=form)
+
+
+@auth.route('/change-email', methods=['GET', 'POST'])
+@login_required
+def change_email_request():
+    form = ChangeEmailForm()
+    if form.validate_on_submit():
+        if current_user.verify_password(form.password.data):
+            new_email = form.email.data
+            token = current_user.gen_email_change_token(new_email)
+            send_email(new_email, 'Confirm Your new email address',
+                       'auth/email/change_email', user=current_user, token=token)
+            flash('An email with instructions to confirm your new email address has been sent to you via email.')
+            return redirect(url_for('main.index'))
+        else:
+            flash('Invalid Password or Email')
+    return render_template("auth/change_email.html", form=form)
+
+
+@auth.route('/change-email/<token>')
+@login_required
+def change_email(token):
+    if current_user.change_email(token):
+        try:
+            db.session.commit()
+            flash('Your email address has been updated.')
+        except:
+            flash('This email already exists in Database')
+            redirect(url_for('main.index'))
+    else:
+        flash('Request to change email failed. Please try again.')
+    return redirect(url_for('main.index'))
